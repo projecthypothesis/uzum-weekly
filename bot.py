@@ -17,8 +17,9 @@ from telegram.ext import (
 )
 
 logging.basicConfig(
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 # Состояния

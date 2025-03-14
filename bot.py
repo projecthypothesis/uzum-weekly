@@ -125,7 +125,10 @@ async def create_chart_command(update: Update, context: ContextTypes.DEFAULT_TYP
 # Первый файл (Number)
 async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
+            "Или набери /cancel, чтобы отменить."
+        )
         return WAITING_NUMBER
 
     file_id = update.message.document.file_id
@@ -141,7 +144,10 @@ async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # Второй файл (Turnover)
 async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
+            "Или набери /cancel, чтобы отменить."
+        )
         return WAITING_TURNOVER
 
     file_id = update.message.document.file_id
@@ -157,7 +163,10 @@ async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYP
 # Третий файл (AOV)
 async def handle_aov_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
+            "Или набери /cancel, чтобы отменить."
+        )
         return WAITING_AOV
 
     file_id = update.message.document.file_id
@@ -225,22 +234,40 @@ async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text("Все графики отправлены!")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Операция отменена.")
+    await update.message.reply_text("Операция отменена. Можешь заново набрать /create_chart.")
     return ConversationHandler.END
 
+# === НОВЫЙ fallback-хендлер, если пользователь шлёт текст/команду, а бот ждёт документ
+async def fallback_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(
+        "Сейчас я жду CSV-файл. Если хочешь прервать процесс, набери /cancel."
+    )
+    # Остаёмся в том же состоянии
+    return ConversationHandler.CONVERSATION_HANDLER_WAITING
+
 def main() -> None:
-    
     load_dotenv()
     TOKEN = os.getenv('TOKEN')
 
     application = ApplicationBuilder().token(TOKEN).build()
 
+    # conversation handler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("create_chart", create_chart_command)],
         states={
-            WAITING_NUMBER: [MessageHandler(filters.Document.ALL, handle_number_file)],
-            WAITING_TURNOVER: [MessageHandler(filters.Document.ALL, handle_turnover_file)],
-            WAITING_AOV: [MessageHandler(filters.Document.ALL, handle_aov_file)],
+            WAITING_NUMBER: [
+                MessageHandler(filters.Document.ALL, handle_number_file),
+                # fallback, если нет документа
+                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
+            ],
+            WAITING_TURNOVER: [
+                MessageHandler(filters.Document.ALL, handle_turnover_file),
+                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
+            ],
+            WAITING_AOV: [
+                MessageHandler(filters.Document.ALL, handle_aov_file),
+                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)]
     )

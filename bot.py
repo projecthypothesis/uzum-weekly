@@ -28,7 +28,6 @@ WAITING_NUMBER = 1
 WAITING_TURNOVER = 2
 WAITING_AOV = 3
 
-# 1) Получаем актуальный курс UZS->USD через API cbu.uz (или берём запасной при ошибке)
 def get_usd_rate_cbu() -> float:
     fallback_rate = 1 / 12950.0
     try:
@@ -42,28 +41,31 @@ def get_usd_rate_cbu() -> float:
         logging.warning("Не удалось получить курс c cbu.uz: %s", e)
         return fallback_rate
 
-# 2) Универсальная функция для построения графика
 def create_chart(
     csv_path: str,
     output_path: str,
-    date_format: str = None,
+    date_format: str = '%Y-%m-%d',  # <-- Указали реальный формат
     convert_currency: bool = False,
     exchange_rate: float = 1.0
 ):
     """
-    Строим график из CSV (Date, Value):
-      - Парсим дату, берём только число дня (df['Day']).
-      - Если convert_currency=True, умножаем Value на exchange_rate (узс->usd).
-      - Рисуем столбцы (#5B34C1), линию тренда, и % изменения тренда над последним столбцом.
-      - Сохраняем в output_path (550×370 px).
+    - Читаем CSV (Date, Value).
+    - Пытаемся парсить дату в формате '%Y-%m-%d'.
+      Если при этом ValueError (формат не совпал) — fallback: даём pd.to_datetime без format.
+    - Берём только день (df['Day']).
+    - Если convert_currency=True, умножаем на exchange_rate (UZS->USD).
+    - Рисуем столбцы + линию тренда + % изменения тренда.
+    - Сохраняем PNG 550×370 px.
     """
     df = pd.read_csv(csv_path)
     df.columns = ['Date', 'Value']
 
-    if date_format:
+    # Пробуем жёсткий формат '%Y-%m-%d', иначе fallback
+    try:
         df['Date'] = pd.to_datetime(df['Date'], format=date_format)
-    else:
-        df['Date'] = pd.to_datetime(df['Date'])
+    except ValueError:
+        logging.warning("Дата не соответствует '%Y-%m-%d'. Пробуем угадать автоматически.")
+        df['Date'] = pd.to_datetime(df['Date'])  # fallback
 
     df['Day'] = df['Date'].dt.day
 
@@ -73,7 +75,7 @@ def create_chart(
     plt.figure(figsize=(5.5, 3.7), dpi=100)
     plt.bar(df['Day'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
 
-    x_vals = np.arange(len(df))  # 0..n-1
+    x_vals = np.arange(len(df))
     y_vals = df['Value'].values
     coeffs = np.polyfit(x_vals, y_vals, 1)
     trend_poly = np.poly1d(coeffs)
@@ -103,32 +105,21 @@ def create_chart(
     plt.savefig(output_path, dpi=100)
     plt.close()
 
-# 3) Хендлеры команд
+# ====== Хендлеры и ConversationHandler как раньше ======
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    /start — приветственное сообщение
-    """
     await update.message.reply_text(
         "Привет! Я помогу тебе сделать картинки для Weekly отчёта. "
         "Нажми /create_chart, чтобы начать процесс."
     )
 
 async def create_chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """
-    /create_chart — начинаем запрашивать файлы (Number, Turnover, AOV).
-    """
-    await update.message.reply_text(
-        "Пришли CSV-файл для графика Number (Количество переводов)."
-    )
+    await update.message.reply_text("Пришли CSV-файл для графика Number (Количество переводов).")
     return WAITING_NUMBER
 
-# Первый файл (Number)
 async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text(
-            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
-            "Или набери /cancel, чтобы отменить."
-        )
+        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
         return WAITING_NUMBER
 
     file_id = update.message.document.file_id
@@ -141,13 +132,9 @@ async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("Отлично! Теперь пришли CSV-файл для Turnover (Оборот).")
     return WAITING_TURNOVER
 
-# Второй файл (Turnover)
 async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text(
-            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
-            "Или набери /cancel, чтобы отменить."
-        )
+        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
         return WAITING_TURNOVER
 
     file_id = update.message.document.file_id
@@ -160,13 +147,9 @@ async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("Отлично! Теперь пришли CSV-файл для AOV (Средняя сумма).")
     return WAITING_AOV
 
-# Третий файл (AOV)
 async def handle_aov_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.document:
-        await update.message.reply_text(
-            "Это не похоже на документ. Пожалуйста, пришли CSV-файл. "
-            "Или набери /cancel, чтобы отменить."
-        )
+        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
         return WAITING_AOV
 
     file_id = update.message.document.file_id
@@ -176,36 +159,31 @@ async def handle_aov_file(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await file.download_to_drive(aov_path)
     context.user_data["aov_csv"] = aov_path
 
-    # Все 3 файла получены, генерируем графики
     await update.message.reply_text("Супер, все три файла получены! Строю графики...")
     await build_and_send_charts(update, context)
 
     return ConversationHandler.END
 
-# Генерация и отправка графиков
 async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     number_csv = context.user_data["number_csv"]
     turnover_csv = context.user_data["turnover_csv"]
     aov_csv = context.user_data["aov_csv"]
 
-    # Локальные пути для готовых PNG
     chart_number = "chart_number.png"
     chart_turnover = "chart_turnover.png"
     chart_aov = "chart_aov.png"
 
-    # Курс
     rate = get_usd_rate_cbu()
 
-    # 1) Number: '%m-%d', без конвертации
+    # Унифицируем: все три вызываем с date_format='%Y-%m-%d', fallback если не совпадёт
     create_chart(
         csv_path=number_csv,
         output_path=chart_number,
-        date_format='%m-%d',
+        date_format='%Y-%m-%d',   # <== Парсим как год-месяц-день, или fallback
         convert_currency=False,
         exchange_rate=1.0
     )
 
-    # 2) Turnover: '%Y-%m-%d', с конвертацией
     create_chart(
         csv_path=turnover_csv,
         output_path=chart_turnover,
@@ -214,7 +192,6 @@ async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TY
         exchange_rate=rate
     )
 
-    # 3) AOV: '%Y-%m-%d', с конвертацией
     create_chart(
         csv_path=aov_csv,
         output_path=chart_aov,
@@ -224,9 +201,7 @@ async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     await update.message.reply_text("Готово! Отправляю три графика...")
-
     chat_id = update.effective_chat.id
-    # Отправляем как документы, чтобы не сжимались
     await context.bot.send_document(chat_id=chat_id, document=open(chart_number, 'rb'), filename="chart_number.png")
     await context.bot.send_document(chat_id=chat_id, document=open(chart_turnover, 'rb'), filename="chart_turnover.png")
     await context.bot.send_document(chat_id=chat_id, document=open(chart_aov, 'rb'), filename="chart_aov.png")
@@ -234,16 +209,8 @@ async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text("Все графики отправлены!")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Операция отменена. Можешь заново набрать /create_chart.")
+    await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
-
-# === НОВЫЙ fallback-хендлер, если пользователь шлёт текст/команду, а бот ждёт документ
-async def fallback_reply(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
-        "Сейчас я жду CSV-файл. Если хочешь прервать процесс, набери /cancel."
-    )
-    # Остаёмся в том же состоянии
-    return ConversationHandler.CONVERSATION_HANDLER_WAITING
 
 def main() -> None:
     load_dotenv()
@@ -251,23 +218,12 @@ def main() -> None:
 
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # conversation handler
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("create_chart", create_chart_command)],
         states={
-            WAITING_NUMBER: [
-                MessageHandler(filters.Document.ALL, handle_number_file),
-                # fallback, если нет документа
-                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
-            ],
-            WAITING_TURNOVER: [
-                MessageHandler(filters.Document.ALL, handle_turnover_file),
-                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
-            ],
-            WAITING_AOV: [
-                MessageHandler(filters.Document.ALL, handle_aov_file),
-                MessageHandler(filters.ALL & ~filters.Document.ALL, fallback_reply)
-            ],
+            WAITING_NUMBER: [MessageHandler(filters.Document.ALL, handle_number_file)],
+            WAITING_TURNOVER: [MessageHandler(filters.Document.ALL, handle_turnover_file)],
+            WAITING_AOV: [MessageHandler(filters.Document.ALL, handle_aov_file)],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)]
     )

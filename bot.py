@@ -378,7 +378,7 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
     """
     Упрощённая функция для P2P, читающая CSV. 
     Логика аналогична, как было: single series, color #5B34C1, 
-    плюс тренд и % прироста тренда.
+    плюс тренд без процента прироста.
     """
     df = pd.read_csv(csv_path)
     df.columns = ['Date', 'Value']
@@ -390,7 +390,8 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
         df['Value'] = (df['Value'] * exchange_rate).round()
     df['Day'] = df['Date'].dt.day
 
-    plt.figure(figsize=(5.5, 3.7), dpi=100)
+    # Новый размер 525x310 (как в других графиках)
+    plt.figure(figsize=(5.25, 3.1), dpi=100)
     plt.bar(df['Day'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
 
     x_vals = np.arange(len(df))
@@ -400,17 +401,9 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
     trendline = trend_poly(x_vals)
     plt.plot(df['Day'], trendline, linestyle='--', color='black')
 
-    start = trend_poly(0)
-    end = trend_poly(len(df)-1)
-    pct = 0 if start == 0 else (end - start)/start*100
-    sign = '+' if pct > 0 else ''
-    pct_str = f"{sign}{pct:.0f}%"
-
+    # Убираем код для отображения процента прироста тренда
+    
     ax = plt.gca()
-    xpos = df['Day'].iloc[-1]
-    ypos = df['Value'].iloc[-1] + df['Value'].max()*0.03
-    plt.text(xpos, ypos, pct_str, color='#5B34C1', ha='center', va='bottom', fontweight='bold')
-
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.tick_params(left=False)

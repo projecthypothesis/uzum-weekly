@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import sys
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -24,9 +24,15 @@ logging.basicConfig(
 )
 
 # Состояния
+CHOOSING_PRODUCT = 0
 WAITING_NUMBER = 1
 WAITING_TURNOVER = 2
 WAITING_AOV = 3
+
+# Константы для кнопок
+P2P_PHONE = "P2P по номеру телефона"
+DEBIT_CARD = "Дебетовая карта"
+CANCEL_BUTTON = "Отменить"
 
 def get_usd_rate_cbu() -> float:
     fallback_rate = 1 / 12950.0
@@ -108,18 +114,66 @@ def create_chart(
 # ====== Хендлеры и ConversationHandler как раньше ======
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Начало работы с ботом, показывает клавиатуру с выбором продукта"""
+    keyboard = [
+        [P2P_PHONE],
+        [DEBIT_CARD]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
     await update.message.reply_text(
         "Привет! Я помогу тебе сделать картинки для Weekly отчёта. "
-        "Нажми /create_chart, чтобы начать процесс."
+        "Выбери продукт, для которого нужно создать графики:",
+        reply_markup=reply_markup
     )
+    return CHOOSING_PRODUCT
 
-async def create_chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Пришли CSV-файл для графика Number (Количество переводов).")
-    return WAITING_NUMBER
+async def product_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обрабатывает выбор продукта пользователем"""
+    user_choice = update.message.text
+    
+    if user_choice == CANCEL_BUTTON:
+        return await cancel_button(update, context)
+    
+    context.user_data["product"] = user_choice
+    
+    if user_choice == P2P_PHONE:
+        # Добавляем кнопку "Отменить"
+        keyboard = [[CANCEL_BUTTON]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "Вы выбрали P2P по номеру телефона. "
+            "Пришли CSV-файл для графика Number (Количество переводов).",
+            reply_markup=reply_markup
+        )
+        return WAITING_NUMBER
+    elif user_choice == DEBIT_CARD:
+        # Добавляем кнопку "Отменить"
+        keyboard = [[CANCEL_BUTTON]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "Вы выбрали Дебетовую карту. "
+            "Пришли CSV-файл для графика Number (Количество переводов).",
+            reply_markup=reply_markup
+        )
+        return WAITING_NUMBER
+    else:
+        await update.message.reply_text(
+            "Пожалуйста, выберите один из доступных продуктов, используя кнопки."
+        )
+        return CHOOSING_PRODUCT
 
 async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text == CANCEL_BUTTON:
+        return await cancel_button(update, context)
+        
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пришли CSV-файл.",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
         return WAITING_NUMBER
 
     file_id = update.message.document.file_id
@@ -129,12 +183,25 @@ async def handle_number_file(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await file.download_to_drive(number_path)
     context.user_data["number_csv"] = number_path
 
-    await update.message.reply_text("Отлично! Теперь пришли CSV-файл для Turnover (Оборот).")
+    # Добавляем кнопку "Отменить"
+    keyboard = [[CANCEL_BUTTON]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "Отлично! Теперь пришли CSV-файл для Turnover (Оборот).",
+        reply_markup=reply_markup
+    )
     return WAITING_TURNOVER
 
 async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text == CANCEL_BUTTON:
+        return await cancel_button(update, context)
+        
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пришли CSV-файл.",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
         return WAITING_TURNOVER
 
     file_id = update.message.document.file_id
@@ -144,12 +211,25 @@ async def handle_turnover_file(update: Update, context: ContextTypes.DEFAULT_TYP
     await file.download_to_drive(turnover_path)
     context.user_data["turnover_csv"] = turnover_path
 
-    await update.message.reply_text("Отлично! Теперь пришли CSV-файл для AOV (Средняя сумма).")
+    # Добавляем кнопку "Отменить"
+    keyboard = [[CANCEL_BUTTON]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    
+    await update.message.reply_text(
+        "Отлично! Теперь пришли CSV-файл для AOV (Средняя сумма).",
+        reply_markup=reply_markup
+    )
     return WAITING_AOV
 
 async def handle_aov_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text == CANCEL_BUTTON:
+        return await cancel_button(update, context)
+        
     if not update.message.document:
-        await update.message.reply_text("Это не похоже на документ. Пришли CSV-файл.")
+        await update.message.reply_text(
+            "Это не похоже на документ. Пришли CSV-файл.",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
         return WAITING_AOV
 
     file_id = update.message.document.file_id
@@ -162,16 +242,30 @@ async def handle_aov_file(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text("Супер, все три файла получены! Строю графики...")
     await build_and_send_charts(update, context)
 
-    return ConversationHandler.END
+    # Возвращаем клавиатуру с выбором продукта после завершения
+    keyboard = [
+        [P2P_PHONE],
+        [DEBIT_CARD]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Хотите создать графики для другого продукта?",
+        reply_markup=reply_markup
+    )
+    
+    return CHOOSING_PRODUCT
 
 async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    product = context.user_data.get("product", "Неизвестный продукт")
     number_csv = context.user_data["number_csv"]
     turnover_csv = context.user_data["turnover_csv"]
     aov_csv = context.user_data["aov_csv"]
 
-    chart_number = "chart_number.png"
-    chart_turnover = "chart_turnover.png"
-    chart_aov = "chart_aov.png"
+    # Добавляем префикс продукта к именам файлов
+    product_prefix = "p2p_" if product == P2P_PHONE else "debit_"
+    chart_number = f"{product_prefix}chart_number.png"
+    chart_turnover = f"{product_prefix}chart_turnover.png"
+    chart_aov = f"{product_prefix}chart_aov.png"
 
     rate = get_usd_rate_cbu()
 
@@ -200,17 +294,36 @@ async def build_and_send_charts(update: Update, context: ContextTypes.DEFAULT_TY
         exchange_rate=rate
     )
 
-    await update.message.reply_text("Готово! Отправляю три графика...")
+    await update.message.reply_text(f"Готово! Отправляю три графика для {product}...")
     chat_id = update.effective_chat.id
-    await context.bot.send_document(chat_id=chat_id, document=open(chart_number, 'rb'), filename="chart_number.png")
-    await context.bot.send_document(chat_id=chat_id, document=open(chart_turnover, 'rb'), filename="chart_turnover.png")
-    await context.bot.send_document(chat_id=chat_id, document=open(chart_aov, 'rb'), filename="chart_aov.png")
+    await context.bot.send_document(chat_id=chat_id, document=open(chart_number, 'rb'), filename=chart_number)
+    await context.bot.send_document(chat_id=chat_id, document=open(chart_turnover, 'rb'), filename=chart_turnover)
+    await context.bot.send_document(chat_id=chat_id, document=open(chart_aov, 'rb'), filename=chart_aov)
 
     await update.message.reply_text("Все графики отправлены!")
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Операция отменена.")
-    return ConversationHandler.END
+    await update.message.reply_text(
+        "Операция отменена.", 
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    # Возвращаем клавиатуру с выбором продукта
+    keyboard = [
+        [P2P_PHONE],
+        [DEBIT_CARD]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Выберите продукт для создания графиков:",
+        reply_markup=reply_markup
+    )
+    
+    return CHOOSING_PRODUCT
+
+async def cancel_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработчик нажатия на кнопку Отменить"""
+    return await cancel_command(update, context)
 
 def main() -> None:
     load_dotenv()
@@ -219,16 +332,26 @@ def main() -> None:
     application = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("create_chart", create_chart_command)],
+        entry_points=[
+            CommandHandler("start", start_command),
+        ],
         states={
-            WAITING_NUMBER: [MessageHandler(filters.Document.ALL, handle_number_file)],
-            WAITING_TURNOVER: [MessageHandler(filters.Document.ALL, handle_turnover_file)],
-            WAITING_AOV: [MessageHandler(filters.Document.ALL, handle_aov_file)],
+            CHOOSING_PRODUCT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, product_choice)
+            ],
+            WAITING_NUMBER: [
+                MessageHandler(filters.Document.ALL | filters.TEXT, handle_number_file)
+            ],
+            WAITING_TURNOVER: [
+                MessageHandler(filters.Document.ALL | filters.TEXT, handle_turnover_file)
+            ],
+            WAITING_AOV: [
+                MessageHandler(filters.Document.ALL | filters.TEXT, handle_aov_file)
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel_command)]
     )
 
-    application.add_handler(CommandHandler("start", start_command))
     application.add_handler(conv_handler)
 
     application.run_polling()

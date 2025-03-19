@@ -26,6 +26,7 @@ logging.basicConfig(
 # Константы для кнопок
 P2P_PHONE = "P2P по номеру телефона"
 DEBIT_CARD = "Дебетовая карта"
+CUSTOM_CHART = "Свой график"
 CANCEL_BUTTON = "Отменить"
 
 # Константы для состояний пользователя
@@ -52,6 +53,14 @@ WAITING_AOV = "waiting_aov"
 # DEBIT flow
 WAITING_DEBIT_VIRT = "waiting_debit_virt"
 WAITING_DEBIT_PLASTIC = "waiting_debit_plastic"
+
+# CUSTOM CHART flow
+WAITING_DATES = "waiting_dates"
+WAITING_VALUES = "waiting_values"
+
+# Ключи для сохранения текстовых данных для "Свой график"
+CUSTOM_DATES_KEY = "custom_dates"
+CUSTOM_VALUES_KEY = "custom_values"
 
 def get_usd_rate_cbu() -> float:
     fallback_rate = 1 / 12950.0
@@ -286,8 +295,8 @@ def create_chart_two_series(
 async def show_product_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показывает клавиатуру с выбором продукта"""
     keyboard = [
-        [P2P_PHONE],
-        [DEBIT_CARD]
+        [DEBIT_CARD, P2P_PHONE],
+        [CUSTOM_CHART]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     
@@ -515,6 +524,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         else:
             await show_product_selection(update, context)
 
+    # Если выбрали Custom Chart
+    elif product == CUSTOM_CHART:
+        if state == WAITING_DATES:
+            await handle_dates_text(update, context)
+        elif state == WAITING_VALUES:
+            await handle_values_text(update, context)
+        else:
+            await show_product_selection(update, context)
+
     else:
         # Нет продукта — возвращаемся в меню
         await show_product_selection(update, context)
@@ -549,6 +567,20 @@ async def handle_product_choice(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=reply_markup
         )
         context.user_data[STATE_KEY] = WAITING_DEBIT_VIRT
+
+    elif user_choice == CUSTOM_CHART:
+        context.user_data[PRODUCT_KEY] = CUSTOM_CHART
+        keyboard = [[CANCEL_BUTTON]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Ты выбрал «Свой график»\n\n"
+            "Пришли список дат в одном сообщении, разделённых пробелами.\n"
+            "Формат даты: ДД.ММ.ГГГГ\n"
+            "Пример: 28.02.2025 01.03.2025 02.03.2025 03.03.2025",
+            reply_markup=reply_markup
+        )
+        context.user_data[STATE_KEY] = WAITING_DATES
 
     else:
         # Ничего не выбрано
@@ -666,6 +698,194 @@ async def handle_debit_plastic_file(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text("✅ Файл для пластиковой карты получен!")
     await build_and_send_charts_debit(update, context)
 
+# ==== CUSTOM CHART HANDLERS ====
+async def handle_dates_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает сообщение с датами для построения собственного графика"""
+    try:
+        dates_text = update.message.text
+        dates_list = dates_text.strip().split()
+        
+        if not dates_list:
+            await update.message.reply_text(
+                "❌ Не удалось распознать даты. Пожалуйста, убедись, что даты разделены пробелами.",
+                reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+            )
+            return
+        
+        # Сохраняем даты в контексте
+        context.user_data[CUSTOM_DATES_KEY] = dates_list
+        
+        await update.message.reply_text(
+            "✅ Даты получены!\n\n"
+            "Теперь пришли значения (числа, разделённые пробелами).\n"
+            "Количество значений должно совпадать с количеством дат.",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
+        context.user_data[STATE_KEY] = WAITING_VALUES
+        
+    except Exception as e:
+        logging.error(f"Ошибка при обработке дат: {e}")
+        await update.message.reply_text(
+            f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
+
+async def handle_values_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Обрабатывает сообщение со значениями для построения собственного графика"""
+    try:
+        values_text = update.message.text
+        values_list = values_text.strip().split()
+        
+        if not values_list:
+            await update.message.reply_text(
+                "❌ Не удалось распознать значения. Пожалуйста, убедись, что значения разделены пробелами.",
+                reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+            )
+            return
+        
+        # Преобразуем значения в числа
+        try:
+            values_list = [float(val) for val in values_list]
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Некоторые значения не являются числами. Пожалуйста, проверь введённые данные.",
+                reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+            )
+            return
+        
+        # Проверяем, что количество значений совпадает с количеством дат
+        dates_list = context.user_data.get(CUSTOM_DATES_KEY, [])
+        if len(values_list) != len(dates_list):
+            await update.message.reply_text(
+                f"❌ Количество значений ({len(values_list)}) не совпадает с количеством дат ({len(dates_list)}).",
+                reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+            )
+            return
+        
+        # Сохраняем значения в контексте
+        context.user_data[CUSTOM_VALUES_KEY] = values_list
+        
+        await update.message.reply_text("✅ Значения получены! Создаю график...")
+        await build_custom_chart(update, context)
+        
+    except Exception as e:
+        logging.error(f"Ошибка при обработке значений: {e}")
+        await update.message.reply_text(
+            f"❌ Произошла ошибка: {str(e)}",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
+
+async def build_custom_chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Создаёт и отправляет график на основе пользовательских данных"""
+    try:
+        dates_list = context.user_data.get(CUSTOM_DATES_KEY, [])
+        values_list = context.user_data.get(CUSTOM_VALUES_KEY, [])
+        
+        # Создаём DataFrame из данных
+        data = {
+            'Date': dates_list,
+            'Value': values_list
+        }
+        
+        # Создаём временный CSV-файл для построения графика
+        custom_csv_path = "custom_chart_data.csv"
+        df = pd.DataFrame(data)
+        
+        # Конвертируем даты в правильный формат
+        try:
+            # Пробуем разные форматы дат
+            for date_format in ['%d.%m.%Y', '%Y-%m-%d', '%d/%m/%Y']:
+                try:
+                    df['Date'] = pd.to_datetime(df['Date'], format=date_format)
+                    break
+                except:
+                    continue
+            
+            # Если ни один формат не подошёл, пробуем без формата
+            if not pd.api.types.is_datetime64_dtype(df['Date']):
+                df['Date'] = pd.to_datetime(df['Date'])
+        except Exception as e:
+            logging.error(f"Ошибка при конвертации дат: {e}")
+            await update.message.reply_text(
+                f"❌ Ошибка при обработке дат: {str(e)}",
+                reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+            )
+            return
+        
+        # Сортируем DataFrame по датам
+        df = df.sort_values('Date')
+        
+        # Создаём файл с графиком
+        custom_chart_path = "custom_chart.png"
+        
+        # Используем функцию create_chart_for_p2p_csv для создания графика
+        create_custom_chart_from_data(
+            df=df,
+            output_path=custom_chart_path
+        )
+        
+        # Отправляем график пользователю
+        chat_id = update.effective_chat.id
+        await update.message.reply_text("✅ График готов! Отправляю...")
+        
+        await context.bot.send_document(
+            chat_id=chat_id,
+            document=open(custom_chart_path, 'rb'),
+            filename=custom_chart_path,
+            caption="Пользовательский график"
+        )
+        
+        await update.message.reply_text("🎉 Готово! Хочешь создать ещё один график?")
+        await show_product_selection(update, context)
+        
+    except Exception as e:
+        logging.error(f"Ошибка при создании графика: {e}")
+        await update.message.reply_text(
+            f"❌ Произошла ошибка при создании графика: {str(e)}",
+            reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
+        )
+
+def create_custom_chart_from_data(df, output_path):
+    """Создаёт график на основе DataFrame с данными"""
+    try:
+        # Добавляем столбец с днями для оси X
+        df['Day'] = df['Date'].dt.day
+        df['Month'] = df['Date'].dt.month
+        
+        # Создаём подписи дат в формате "день.месяц"
+        df['Label'] = df['Day'].astype(str) + '.' + df['Month'].astype(str)
+        
+        # Создаём график с размером 525x310 пикселей
+        plt.figure(figsize=(5.25, 3.1), dpi=100)
+        plt.bar(df['Label'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
+        
+        # Добавляем линию тренда
+        x_vals = np.arange(len(df))
+        y_vals = df['Value'].values
+        coeffs = np.polyfit(x_vals, y_vals, 1)
+        trend_poly = np.poly1d(coeffs)
+        trendline = trend_poly(x_vals)
+        plt.plot(df['Label'], trendline, linestyle='--', color='black')
+        
+        # Убираем рамки
+        ax = plt.gca()
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.tick_params(left=False)
+        
+        # Если слишком много дат, поворачиваем подписи
+        if len(df) > 7:
+            plt.xticks(rotation=45, ha='right')
+        
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=100)
+        plt.close()
+        
+        return True
+        
+    except Exception as e:
+        logging.error(f"Ошибка при создании графика: {e}")
+        raise
 
 def main() -> None:
     load_dotenv()

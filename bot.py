@@ -149,21 +149,25 @@ def create_chart_single_series(
             if convert_currency:
                 df[val_col_actual] = (df[val_col_actual] * exchange_rate).round()
             
-            # Берём только день
+            # Берём день и месяц для формата "dd.mm"
             df['Day'] = df[date_col_actual].dt.day
+            df['Month'] = df[date_col_actual].dt.month
+            df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
             
             # Новый размер 525x310
             plt.figure(figsize=(5.25, 3.1), dpi=100)
-            plt.bar(df['Day'], df[val_col_actual], color=color_bar, edgecolor='none', width=0.5)
+            plt.bar(df['Label'], df[val_col_actual], color=color_bar, edgecolor='none', width=0.5)
             
             x_vals = np.arange(len(df))
             y_vals = df[val_col_actual].values
             coeffs = np.polyfit(x_vals, y_vals, 1)
             trend_poly = np.poly1d(coeffs)
             trendline = trend_poly(x_vals)
-            plt.plot(df['Day'], trendline, linestyle='--', color='black')
+            plt.plot(df['Label'], trendline, linestyle='--', color='black')
             
-            # Убираем подписи линии тренда и процент изменения
+            # Если много дат, поворачиваем подписи
+            if len(df) > 7:
+                plt.xticks(rotation=45, ha='right')
             
             ax = plt.gca()
             for spine in ax.spines.values():
@@ -235,8 +239,10 @@ def create_chart_two_series(
             # Преобразуем даты
             df = read_dates_column(df, date_col=date_col_actual, date_format=date_format)
             
-            # Берём только день
+            # Берём день и месяц для формата "dd.mm"
             df['Day'] = df[date_col_actual].dt.day
+            df['Month'] = df[date_col_actual].dt.month
+            df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
             
             x_vals = np.arange(len(df))  # 0..n-1 для polyfit
             # Для построения grouped bars, смещение
@@ -246,8 +252,8 @@ def create_chart_two_series(
             plt.figure(figsize=(5.25, 3.1), dpi=100)
             
             # Рисуем 2 столбца на каждую дату (со смещением)
-            plt.bar(df['Day'] - bar_width/2, df[col1_actual], color=color1, width=bar_width, label="Заказанные")
-            plt.bar(df['Day'] + bar_width/2, df[col2_actual], color=color2, width=bar_width, label="Выданные")
+            plt.bar(np.arange(len(df)) - bar_width/2, df[col1_actual], color=color1, width=bar_width, label="Заказанные")
+            plt.bar(np.arange(len(df)) + bar_width/2, df[col2_actual], color=color2, width=bar_width, label="Выданные")
             
             # Линия тренда для col1 (фиолетовая)
             y1 = df[col1_actual].values
@@ -255,7 +261,7 @@ def create_chart_two_series(
             trend_poly1 = np.poly1d(coeffs1)
             trendline1 = trend_poly1(x_vals)
             # Рисуем линию тренда черным цветом
-            plt.plot(df['Day'], trendline1, linestyle='--', color='black')
+            plt.plot(x_vals, trendline1, linestyle='--', color='black')
             
             # Линия тренда для col2 (розовая)
             y2 = df[col2_actual].values
@@ -263,7 +269,14 @@ def create_chart_two_series(
             trend_poly2 = np.poly1d(coeffs2)
             trendline2 = trend_poly2(x_vals)
             # Рисуем линию тренда розовым цветом (как столбцы)
-            plt.plot(df['Day'], trendline2, linestyle='--', color=color2)
+            plt.plot(x_vals, trendline2, linestyle='--', color=color2)
+            
+            # Устанавливаем метки с правильным форматом даты
+            plt.xticks(np.arange(len(df)), df['Label'])
+            
+            # Если слишком много дат, поворачиваем подписи
+            if len(df) > 7:
+                plt.xticks(rotation=45, ha='right')
             
             # Убираем рамки
             ax = plt.gca()
@@ -398,20 +411,24 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
     if convert_currency:
         df['Value'] = (df['Value'] * exchange_rate).round()
     df['Day'] = df['Date'].dt.day
+    df['Month'] = df['Date'].dt.month
+    df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
 
     # Новый размер 525x310 (как в других графиках)
     plt.figure(figsize=(5.25, 3.1), dpi=100)
-    plt.bar(df['Day'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
+    plt.bar(df['Label'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
 
     x_vals = np.arange(len(df))
     y_vals = df['Value'].values
     coeffs = np.polyfit(x_vals, y_vals, 1)
     trend_poly = np.poly1d(coeffs)
     trendline = trend_poly(x_vals)
-    plt.plot(df['Day'], trendline, linestyle='--', color='black')
+    plt.plot(df['Label'], trendline, linestyle='--', color='black')
 
-    # Убираем код для отображения процента прироста тренда
-    
+    # Если много дат, поворачиваем подписи
+    if len(df) > 7:
+        plt.xticks(rotation=45, ha='right')
+
     ax = plt.gca()
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -853,7 +870,7 @@ def create_custom_chart_from_data(df, output_path):
         df['Month'] = df['Date'].dt.month
         
         # Создаём подписи дат в формате "день.месяц"
-        df['Label'] = df['Day'].astype(str) + '.' + df['Month'].astype(str)
+        df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
         
         # Создаём график с размером 525x310 пикселей
         plt.figure(figsize=(5.25, 3.1), dpi=100)

@@ -28,6 +28,8 @@ P2P_PHONE = "P2P по номеру телефона"
 DEBIT_CARD = "Дебетовая карта"
 CUSTOM_CHART = "Свой график"
 CANCEL_BUTTON = "Отменить"
+VIRTUAL_CARD = "Виртуальная карта"
+PLASTIC_CARD = "Пластиковая карта"
 
 # Константы для состояний пользователя
 STATE_KEY = "state"
@@ -44,6 +46,7 @@ DEBIT_PLASTIC_KEY = "debit_plastic_xlsx"  # Пластик
 
 # Состояния
 CHOOSING_PRODUCT = "choosing_product"
+CHOOSING_DEBIT_TYPE = "choosing_debit_type"
 
 # P2P flow
 WAITING_NUMBER = "waiting_number"
@@ -537,6 +540,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await handle_product_choice(update, context)
         return
 
+    # Если выбираем тип дебетовой карты
+    if state == CHOOSING_DEBIT_TYPE:
+        await handle_product_choice(update, context)
+        return
+
     product = context.user_data.get(PRODUCT_KEY, None)
 
     # Если выбрали P2P
@@ -591,17 +599,15 @@ async def handle_product_choice(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif user_choice == DEBIT_CARD:
         context.user_data[PRODUCT_KEY] = DEBIT_CARD
-        keyboard = [[CANCEL_BUTTON]]
+        keyboard = [[VIRTUAL_CARD, PLASTIC_CARD], [CANCEL_BUTTON]]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
         await update.message.reply_text(
             "✅ Ты выбрал «Дебетовая карта»\n\n"
-            "Сначала пришли XLSX-файл с данными по «Виртуальной карте».\n"
-            "Ожидаем формат: [Date, Value].\n"
-            "Пример: 2025-03-01, 1123",
+            "Выбери тип карты, для которой хочешь создать отчёт:",
             reply_markup=reply_markup
         )
-        context.user_data[STATE_KEY] = WAITING_DEBIT_VIRT
+        context.user_data[STATE_KEY] = CHOOSING_DEBIT_TYPE
 
     elif user_choice == CUSTOM_CHART:
         context.user_data[PRODUCT_KEY] = CUSTOM_CHART
@@ -616,6 +622,31 @@ async def handle_product_choice(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=reply_markup
         )
         context.user_data[STATE_KEY] = WAITING_DATES
+    
+    elif user_choice == VIRTUAL_CARD and context.user_data.get(STATE_KEY) == CHOOSING_DEBIT_TYPE:
+        keyboard = [[CANCEL_BUTTON]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Ты выбрал «Виртуальная карта»\n\n"
+            "Пришли XLSX-файл с данными по виртуальной карте.\n"
+            "Ожидаем формат: [Date, Value].\n"
+            "Пример: 2025-03-01, 1123",
+            reply_markup=reply_markup
+        )
+        context.user_data[STATE_KEY] = WAITING_DEBIT_VIRT
+
+    elif user_choice == PLASTIC_CARD and context.user_data.get(STATE_KEY) == CHOOSING_DEBIT_TYPE:
+        keyboard = [[CANCEL_BUTTON]]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
+        await update.message.reply_text(
+            "✅ Ты выбрал «Пластиковая карта»\n\n"
+            "Пришли XLSX-файл с данными по пластиковой карте.\n"
+            "Ожидаем формат: [Date, Заказанные, Выданные].",
+            reply_markup=reply_markup
+        )
+        context.user_data[STATE_KEY] = WAITING_DEBIT_PLASTIC
 
     else:
         # Ничего не выбрано
@@ -706,13 +737,8 @@ async def handle_debit_virt_file(update: Update, context: ContextTypes.DEFAULT_T
     await file.download_to_drive(virt_path)
     context.user_data[DEBIT_VIRT_KEY] = virt_path
 
-    await update.message.reply_text(
-        "✅ Файл для виртуальной карты загружен!\n\n"
-        "Теперь пришли XLSX-файл для пластиковой карты.\n"
-        "Ожидаем формат: [Date, Заказанные, Выданные].",
-        reply_markup=ReplyKeyboardMarkup([[CANCEL_BUTTON]], resize_keyboard=True)
-    )
-    context.user_data[STATE_KEY] = WAITING_DEBIT_PLASTIC
+    # Создаем отчет только для виртуальной карты
+    await build_and_send_virt_chart(update, context)
 
 async def handle_debit_plastic_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Получаем XLSX для пластиковой карты (2 столбца)"""
@@ -730,8 +756,76 @@ async def handle_debit_plastic_file(update: Update, context: ContextTypes.DEFAUL
     await file.download_to_drive(plast_path)
     context.user_data[DEBIT_PLASTIC_KEY] = plast_path
 
-    await update.message.reply_text("✅ Файл для пластиковой карты получен!")
-    await build_and_send_charts_debit(update, context)
+    # Создаем отчет только для пластиковой карты
+    await build_and_send_plastic_chart(update, context)
+
+async def build_and_send_virt_chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Создает и отправляет только график для виртуальной карты"""
+    virt_xlsx = context.user_data[DEBIT_VIRT_KEY]
+    chart_virt = "virt_card_chart.png"
+    
+    await update.message.reply_text("⏳ Создаю график для виртуальной карты...")
+
+    result_virt, error_virt = create_chart_single_series(
+        xlsx_path=virt_xlsx,
+        output_path=chart_virt,
+        date_format='%Y-%m-%d',
+        convert_currency=False,
+        exchange_rate=1.0,
+        color_bar='#5B34C1',
+        label_for_percent="Виртуалка"
+    )
+    
+    if result_virt is None:
+        await update.message.reply_text(f"❌ Ошибка при обработке файла виртуальной карты: {error_virt}")
+        return
+
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("✅ График виртуальной карты готов! Отправляю...")
+
+    # Отправляем
+    await context.bot.send_document(
+        chat_id=chat_id,
+        document=open(chart_virt, 'rb'),
+        filename=chart_virt,
+        caption="Виртуальная карта (один столбец)"
+    )
+
+    await update.message.reply_text("🎉 Готово! Хочешь создать другой график?")
+    await show_product_selection(update, context)
+
+async def build_and_send_plastic_chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Создает и отправляет только график для пластиковой карты"""
+    plast_xlsx = context.user_data[DEBIT_PLASTIC_KEY]
+    chart_plast = "plastic_card_chart.png"
+    
+    await update.message.reply_text("⏳ Создаю график для пластиковой карты...")
+
+    result_plast, error_plast = create_chart_two_series(
+        xlsx_path=plast_xlsx,
+        output_path=chart_plast,
+        date_format='%Y-%m-%d',
+        color1='#5B34C1',  # "Заказанные"
+        color2='#FF259E',  # "Выданные"
+    )
+    
+    if result_plast is None:
+        await update.message.reply_text(f"❌ Ошибка при обработке файла пластиковой карты: {error_plast}")
+        return
+
+    chat_id = update.effective_chat.id
+    await update.message.reply_text("✅ График пластиковой карты готов! Отправляю...")
+
+    # Отправляем
+    await context.bot.send_document(
+        chat_id=chat_id,
+        document=open(chart_plast, 'rb'),
+        filename=chart_plast,
+        caption="Пластиковая карта: Заказанные и Выданные"
+    )
+
+    await update.message.reply_text("🎉 Готово! Хочешь создать другой график?")
+    await show_product_selection(update, context)
 
 # ==== CUSTOM CHART HANDLERS ====
 async def handle_dates_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

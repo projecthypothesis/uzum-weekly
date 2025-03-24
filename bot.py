@@ -154,8 +154,8 @@ def create_chart_single_series(
             df['Month'] = df[date_col_actual].dt.month
             df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
             
-            # Новый размер 525x310
-            plt.figure(figsize=(5.25, 3.1), dpi=100)
+            # Новый размер 848x502
+            plt.figure(figsize=(8.48, 5.02), dpi=100)
             plt.bar(df['Label'], df[val_col_actual], color=color_bar, edgecolor='none', width=0.5)
             
             x_vals = np.arange(len(df))
@@ -248,12 +248,12 @@ def create_chart_two_series(
             # Для построения grouped bars, смещение
             bar_width = 0.4
             
-            # Фигура с новым размером 525x310
-            plt.figure(figsize=(5.25, 3.1), dpi=100)
+            # Фигура с новым размером 848x502
+            plt.figure(figsize=(8.48, 5.02), dpi=100)
             
             # Рисуем 2 столбца на каждую дату (со смещением)
-            plt.bar(np.arange(len(df)) - bar_width/2, df[col1_actual], color=color1, width=bar_width, label="Заказанные")
-            plt.bar(np.arange(len(df)) + bar_width/2, df[col2_actual], color=color2, width=bar_width, label="Выданные")
+            plt.bar(np.arange(len(df)) - bar_width/2, df[col1_actual], color=color1, width=bar_width, label="заказанные")
+            plt.bar(np.arange(len(df)) + bar_width/2, df[col2_actual], color=color2, width=bar_width, label="выданные")
             
             # Линия тренда для col1 (фиолетовая)
             y1 = df[col1_actual].values
@@ -284,10 +284,28 @@ def create_chart_two_series(
                 spine.set_visible(False)
             ax.tick_params(left=False)
             
-            # "Мини-легенда" снизу с простыми настройками
-            plt.legend(loc='lower center', bbox_to_anchor=(0.5, -0.25), ncol=2)
+            # Создаем квадратные маркеры для легенды
+            from matplotlib.patches import Rectangle
+            legend_elements = [
+                Rectangle((0, 0), width=1, height=1, facecolor=color1, edgecolor='none', label='заказанные'),
+                Rectangle((0, 0), width=1, height=1, facecolor=color2, edgecolor='none', label='выданные')
+            ]
             
-            plt.tight_layout(pad=1.5)  # Увеличиваем отступы для легенды
+            # Настраиваем легенду с квадратными маркерами
+            plt.legend(
+                handles=legend_elements,
+                loc='upper center', 
+                bbox_to_anchor=(0.5, -0.16),
+                ncol=2,
+                frameon=False,
+                handletextpad=0.5,
+                columnspacing=1.0,
+                # Делаем размер маркеров одинаковым
+                handlelength=1.5,
+                handleheight=1.5
+            )
+            
+            plt.tight_layout(pad=2.0)  # Увеличиваем отступы для легенды
             plt.savefig(output_path, dpi=100, bbox_inches='tight')  # Сохраняем с учетом легенды
             plt.close()
             

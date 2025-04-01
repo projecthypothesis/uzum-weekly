@@ -381,43 +381,36 @@ async def build_and_send_charts_p2p(update: Update, context: ContextTypes.DEFAUL
     chart_turnover = "chart_turnover.png"
     chart_aov = "chart_aov.png"
 
-    rate = get_usd_rate_cbu()
+    # Конвертация больше не нужна, так как данные уже в USD
+    # rate = get_usd_rate_cbu()
 
     await update.message.reply_text("⏳ Создаю графики P2P (Number/Turnover/AOV)...")
-
-    # Можно переиспользовать "single series" логику, но тут CSV, не XLSX -> 
-    # Оставим старый вариант, если CSV форматы не поменялись
-    # Для простоты: read_csv + fallback. (Или вы по-прежнему date_format='%Y-%m-%d')
-
-    # ... (ниже — ваш старый create_chart или аналог)
-    # Здесь, чтобы не расписывать всё заново, сделаем упрощённо:
-    # Если нужно — замените на полноценную функцию, как раньше.
 
     # 1) Number
     create_chart_for_p2p_csv(
         csv_path=number_csv,
         output_path=chart_number,
         date_format='%Y-%m-%d',
-        convert_currency=False,
+        convert_currency=False,  # Конвертация не нужна
         exchange_rate=1.0
     )
 
-    # 2) Turnover
+    # 2) Turnover - больше не нужно конвертировать
     create_chart_for_p2p_csv(
         csv_path=turnover_csv,
         output_path=chart_turnover,
         date_format='%Y-%m-%d',
-        convert_currency=True,
-        exchange_rate=rate
+        convert_currency=False,  # Отключаем конвертацию
+        exchange_rate=1.0
     )
 
-    # 3) AOV
+    # 3) AOV - больше не нужно конвертировать
     create_chart_for_p2p_csv(
         csv_path=aov_csv,
         output_path=chart_aov,
         date_format='%Y-%m-%d',
-        convert_currency=True,
-        exchange_rate=rate
+        convert_currency=False,  # Отключаем конвертацию
+        exchange_rate=1.0
     )
 
     chat_id = update.effective_chat.id

@@ -168,6 +168,13 @@ def create_chart_single_series(
             trendline = trend_poly(x_vals)
             plt.plot(df['Label'], trendline, linestyle='--', color='black')
             
+            # Если много дат, отображаем их через одну
+            if len(df) > 15:
+                # Создаем пустые лейблы для каждого второго значения
+                xticks_positions = np.arange(len(df))
+                xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
+                plt.xticks(xticks_positions, xticks_labels)
+            
             # Если много дат, поворачиваем подписи
             if len(df) > 7:
                 plt.xticks(rotation=45, ha='right')
@@ -276,6 +283,13 @@ def create_chart_two_series(
             
             # Устанавливаем метки с правильным форматом даты
             plt.xticks(np.arange(len(df)), df['Label'])
+            
+            # Если много дат, отображаем их через одну
+            if len(df) > 15:
+                # Создаем пустые лейблы для каждого второго значения
+                xticks_positions = np.arange(len(df))
+                xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
+                plt.xticks(xticks_positions, xticks_labels)
             
             # Если слишком много дат, поворачиваем подписи
             if len(df) > 7:
@@ -446,6 +460,13 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
     trendline = trend_poly(x_vals)
     plt.plot(df['Label'], trendline, linestyle='--', color='black')
 
+    # Если много дат, отображаем их через одну
+    if len(df) > 15:
+        # Создаем пустые лейблы для каждого второго значения
+        xticks_positions = np.arange(len(df))
+        xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
+        plt.xticks(xticks_positions, xticks_labels)
+    
     # Если много дат, поворачиваем подписи
     if len(df) > 7:
         plt.xticks(rotation=45, ha='right')
@@ -1001,6 +1022,13 @@ def create_custom_chart_from_data(df, output_path):
         for spine in ax.spines.values():
             spine.set_visible(False)
         ax.tick_params(left=False)
+        
+        # Если много дат, отображаем их через одну
+        if len(df) > 15:
+            # Создаем пустые лейблы для каждого второго значения
+            xticks_positions = np.arange(len(df))
+            xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
+            plt.xticks(xticks_positions, xticks_labels)
         
         # Если слишком много дат, поворачиваем подписи
         if len(df) > 7:

@@ -437,48 +437,82 @@ def create_chart_for_p2p_csv(csv_path, output_path, date_format, convert_currenc
     Логика аналогична, как было: single series, color #5B34C1, 
     плюс тренд без процента прироста.
     """
-    df = pd.read_csv(csv_path)
-    df.columns = ['Date', 'Value']
+    # Читаем CSV файл с хранением оригинальных имен колонок
     try:
-        df['Date'] = pd.to_datetime(df['Date'], format=date_format)
-    except ValueError:
-        df['Date'] = pd.to_datetime(df['Date'])
-    if convert_currency:
-        df['Value'] = (df['Value'] * exchange_rate).round()
-    df['Day'] = df['Date'].dt.day
-    df['Month'] = df['Date'].dt.month
-    df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
+        df = pd.read_csv(csv_path)
+        
+        # Проверяем структуру и определяем столбцы
+        if len(df.columns) < 2:
+            logging.error(f"Недостаточно колонок в файле. Ожидается минимум 2, получено {len(df.columns)}")
+            return None
+            
+        # Определяем колонку с датой (первая колонка)
+        date_col = df.columns[0]
+        
+        # Определяем колонку со значениями (вторая колонка)
+        value_col = df.columns[1]
+        
+        logging.info(f"Используем колонки CSV: {date_col} (дата) и {value_col} (значение)")
+        
+        # Переименовываем для единообразия
+        df = df.rename(columns={date_col: 'Date', value_col: 'Value'})
+        
+        # Конвертируем даты
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], format=date_format)
+        except ValueError:
+            logging.warning(f"Формат даты не соответствует {date_format}, пробуем автоматическое определение.")
+            df['Date'] = pd.to_datetime(df['Date'])
+            
+        # Конвертируем значения в числа, если нужно
+        try:
+            df['Value'] = pd.to_numeric(df['Value'], errors='coerce')
+            # Заменяем отсутствующие значения на 0
+            df['Value'].fillna(0, inplace=True)
+        except Exception as e:
+            logging.error(f"Ошибка при конвертации значений: {e}")
+            
+        if convert_currency:
+            df['Value'] = (df['Value'] * exchange_rate).round()
+            
+        df['Day'] = df['Date'].dt.day
+        df['Month'] = df['Date'].dt.month
+        df['Label'] = df['Day'].apply(lambda x: f"{x:02d}") + '.' + df['Month'].apply(lambda x: f"{x:02d}")
 
-    # Новый размер 525x310 (как в других графиках)
-    plt.figure(figsize=(5.25, 3.1), dpi=100)
-    plt.bar(df['Label'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
+        # Новый размер 525x310 (как в других графиках)
+        plt.figure(figsize=(5.25, 3.1), dpi=100)
+        plt.bar(df['Label'], df['Value'], color='#5B34C1', edgecolor='none', width=0.5)
 
-    x_vals = np.arange(len(df))
-    y_vals = df['Value'].values
-    coeffs = np.polyfit(x_vals, y_vals, 1)
-    trend_poly = np.poly1d(coeffs)
-    trendline = trend_poly(x_vals)
-    plt.plot(df['Label'], trendline, linestyle='--', color='black')
+        x_vals = np.arange(len(df))
+        y_vals = df['Value'].values
+        coeffs = np.polyfit(x_vals, y_vals, 1)
+        trend_poly = np.poly1d(coeffs)
+        trendline = trend_poly(x_vals)
+        plt.plot(df['Label'], trendline, linestyle='--', color='black')
 
-    # Если много дат, отображаем их через одну
-    if len(df) > 15:
-        # Создаем пустые лейблы для каждого второго значения
-        xticks_positions = np.arange(len(df))
-        xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
-        plt.xticks(xticks_positions, xticks_labels)
-    
-    # Если много дат, поворачиваем подписи
-    if len(df) > 7:
-        plt.xticks(rotation=45, ha='right')
+        # Если много дат, отображаем их через одну
+        if len(df) > 15:
+            # Создаем пустые лейблы для каждого второго значения
+            xticks_positions = np.arange(len(df))
+            xticks_labels = ['' if i % 2 else label for i, label in enumerate(df['Label'])]
+            plt.xticks(xticks_positions, xticks_labels)
+        
+        # Если много дат, поворачиваем подписи
+        if len(df) > 7:
+            plt.xticks(rotation=45, ha='right')
 
-    ax = plt.gca()
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.tick_params(left=False)
+        ax = plt.gca()
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.tick_params(left=False)
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=100)
-    plt.close()
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=100)
+        plt.close()
+        
+    except Exception as e:
+        logging.error(f"Ошибка при создании графика P2P CSV: {e}")
+        return None
 
 
 async def build_and_send_charts_debit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
